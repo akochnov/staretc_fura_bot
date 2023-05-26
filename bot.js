@@ -53,7 +53,7 @@ bot.on("text", ctx => {
         }
 
         parser.parse(spreadsheetId, "Sheet1").then((items) => {
-            console.log(items);
+            //console.log(items);
             const item = items.filter(i => {return i.q.trim().toLowerCase() === original.trim().toLowerCase();});
             console.log(item);
             if (item.length != 0) ctx.reply(item[0].a);
