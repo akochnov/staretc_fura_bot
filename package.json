@@ -1,0 +1,25 @@
+{
+  "name": "bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "bot.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "https://github.com/akochnov",
+  "license": "MIT",
+  "dependencies": {
+    "@google-cloud/firestore": "^6.4.2",
+    "@google-cloud/translate": "^7.0.5",
+    "axios": "^1.2.0",
+    "dotenv": "^16.0.3",
+    "googleapis": "^118.0.0",
+    "public-google-sheets-parser": "^1.3.2",
+    "querystring": "^0.2.1",
+    "telegraf": "^4.11.2",
+    "translitit-latin-to-mkhedruli-georgian": "^1.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.28.0"
+  }
+}
