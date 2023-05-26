@@ -29,7 +29,7 @@ bot.start((ctx) => {
         
         parser.parse(spreadsheetId, "Sheet1").then((items) => {
             const item = items.filter(i => {return i.q.toLowerCase() === "start";});
-            if (item.length > 0) ctx.reply(item[0].a);
+            if (item.length > 0) ctx.reply(item[0].a.replaceAll("*","\n\n"));
             else ctx.reply(iDontKnowTheAnswer);
         });
     } catch (err) {
