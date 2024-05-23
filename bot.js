@@ -1,108 +1,113 @@
 const dotenv = require("dotenv");
-const { Telegraf } = require("telegraf");
-
-const PublicGoogleSheetsParser = require("public-google-sheets-parser");
-
 dotenv.config();
 
+const telegramAdminChannelID = process.env.TELEGRAM_ADMIN_CHANNEL_ID;
+const users = process.env.TELEGRAM_USERS.split(" ");
+
+const { Telegraf } = require("telegraf");
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-const users = process.env.TELEGRAM_USERS.split(" ");
-users.push(process.env.TELEGRAM_BOT_OWNER);
-
-const spreadsheetId = process.env.SPREADSHEET_ID;
-
-const telegramAdminChannelID = process.env.TELEGRAM_ADMIN_CHANNEL_ID;
-
+const PublicGoogleSheetsParser = require("public-google-sheets-parser");
 const parser = new PublicGoogleSheetsParser();
+const spreadsheetId = process.env.SPREADSHEET_ID;
+const sheetName = "Sheet1";
 
-const iDontKnowTheAnswer = "Не знаю ответа"
+const openaiAPIKey = process.env.OPENAI_API_KEY;
+const openai = require("openai");
+const gpt = new openai.OpenAI({
+    apiKey: openaiAPIKey, 
+});
 
-var questions = [];
+const errorMessage = "Что-то пошло не так, попробуй еще раз";
 
-var answerCodes = [];
+function log(text) {
+    console.log(text);
+    bot.telegram.sendMessage(telegramAdminChannelID, text);
+}
+
+async function getSpreadSheetValue(key) {
+    const rows = await parser.parse(spreadsheetId, sheetName);
+    const matchingRows = rows.filter(row => row.q.toLowerCase() === key.trim().toLowerCase());
+    if (matchingRows[0]) {
+        return matchingRows[0].a?.replaceAll("*", "\n\n");
+    }
+}
+
+async function handleStart(ctx) {
+    try {
+        log("Подключился игрок: @" + ctx.update.message.from.username);
+
+        const startMessage = await getSpreadSheetValue("start");
+        ctx.reply(startMessage);
+
+    } catch (err) {
+        log("Ошибка: " + err);
+        ctx.reply(errorMessage);
+    }
+}
 
 
 bot.start((ctx) => {
-    try {
-        bot.telegram.sendMessage(telegramAdminChannelID, "Подключился игрок: @"+ctx.update.message.from.username);
-        
-        parser.parse(spreadsheetId, "Sheet1").then((items) => {
-            const item = items.filter(i => {return i.q.toLowerCase() === "start";});
-            if (item.length > 0) ctx.reply(item[0].a.replaceAll("*","\n\n"));
-            else ctx.reply(iDontKnowTheAnswer);
-        });
-    } catch (err) {
-        console.log(err);
-        bot.telegram.sendMessage(telegramAdminChannelID, "Ошибка: "+err);
-    }
-
+    handleStart(ctx);
 });
 
+async function getGPTResponse(message) {
+    
+    const promptStart = await getSpreadSheetValue("prompt_start");
+    const promptEnd = await getSpreadSheetValue("prompt_end");
+
+    const completion = await gpt.chat.completions.create({
+        messages: [{ role: "system", content: promptStart+" "+message+" "+promptEnd}],
+        model: "gpt-4o",
+    });
+    
+    if (completion) {
+        return completion.choices[0]["message"]["content"];
+    }
+}
 
 
-
-bot.on("text", ctx => {
-    try {    
-        const original = ctx.message.text.trim().toLowerCase();
-        console.log(original);
-
-        if (users.includes(ctx.update.message.from.username)) {
-            if (original == "reset") {
-                questions = [];
-                answerCodes = [];
-                ctx.reply("Правильные ответы сброшены");
-            }
-        }       
-
+async function handleMessage(ctx) {
+    try {
         if (ctx.message.chat.id == telegramAdminChannelID) {
             return;
         }
+
+        const original = ctx.message.text;
+        log("@"+ctx.update.message.from.username+" написал: "+original);
+    
+        const response = await getSpreadSheetValue(original);
         
-        bot.telegram.sendMessage(telegramAdminChannelID, "@"+ctx.update.message.from.username+" написал: "+original);
-
-
-
-
-        parser.parse(spreadsheetId, "Sheet1").then((items) => {
-            //console.log(items);
-            const questionCount = items.filter(i => i.code).length;
-            const item = items.filter(i => {return i.q.trim().toLowerCase() === original;});
-            //console.log(item);
-            if (item.length != 0) {
-                if (!questions.includes(original)) questions.push(original);
-                
-                if (!item[0].code || item[0].code == "" || questions.includes(item[0].code)) {
-                    ctx.reply(item[0].a.replaceAll("*","\n\n"));
-                    if (item[0].code && !answerCodes.includes(item[0].code)) {
-                        answerCodes.push(item[0].code);
-                    }
-                } else {
-                    ctx.reply("Не хитри!");
-                }
-            } else {
-                ctx.reply(iDontKnowTheAnswer);
-            }
-            if (answerCodes.length == questionCount) {
-                setTimeout(()=> ctx.reply("Поздравлямбы! Вы собрали Катю в школу"), 500);
-                bot.telegram.sendMessage(telegramAdminChannelID, "@"+ctx.update.message.from.username+" написал: "+original);
-            }
-        });
+        if (response) {
+            log("Бот ответил @"+ctx.update.message.from.username+": "+response);
+            ctx.reply(response);
+        } 
+        else {
+            const gptResponse = await getGPTResponse(original);
+            log("Бот ответил @"+ctx.update.message.from.username+": "+gptResponse);
+            ctx.reply(gptResponse);                  
+        }
     } catch (err) {
-        console.log(err);
-        bot.telegram.sendMessage(telegramAdminChannelID, "Ошибка: "+err);
+        log("Ошибка: " + err);
+        ctx.reply(errorMessage);
     }
+}
 
-})
-
-
-
+bot.on("text", ctx => { 
+    handleMessage(ctx);
+});
 
 
 bot.launch();
-console.log("Bot is running...");
+log("Бот запущен");
 
 
 // Enable graceful stop
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+process.once("SIGINT", () => {
+    log("Бот остановлен");
+    bot.stop("SIGINT");
+});
+process.once("SIGTERM", () => {
+    log("Бот остановлен");
+    bot.stop("SIGTERM");
+});
